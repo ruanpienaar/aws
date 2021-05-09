@@ -1,0 +1,160 @@
+---
+
+Resources:
+
+  SiteSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId:
+        Ref: SiteVPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: "eu-west-1a"
+      Tags:
+      - Key: stack
+        Value: site
+
+  SiteSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow ssh access
+      VpcId:
+         Ref: SiteVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 1024
+        ToPort: 65535
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 443
+        ToPort: 443
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 1024
+        ToPort: 65535
+        CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: stack
+          Value: site
+
+  SiteVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: 'false'
+      EnableDnsHostnames: 'false'
+      Tags:
+       - Key: stack
+         Value: site
+
+  SiteInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: stack
+        Value: site
+
+  SiteVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId:
+        Ref: SiteInternetGateway
+      VpcId:
+        Ref: SiteVPC
+
+  SiteRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:
+        Ref: SiteVPC
+      Tags:
+      - Key: stack
+        Value: site
+
+  SiteSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: SiteSubnet
+      RouteTableId:
+        Ref: SiteRouteTable
+
+  SiteRoute:
+    Type: AWS::EC2::Route
+    DependsOn: SiteInternetGateway
+    Properties:
+       RouteTableId:
+         Ref: SiteRouteTable
+       DestinationCidrBlock: 0.0.0.0/0
+       GatewayId:
+         Ref: SiteInternetGateway
+
+  SiteEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref SiteEC2Instance
+      Tags:
+      - Key: stack
+        Value: site
+
+  SiteEC2Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      Comment: some init steps
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              openssh: []
+          services:
+            sysvinit:
+              sshd:
+                enabled: 'true'
+                ensureRunning: 'true'
+    Properties:
+      KeyName: "rp-site-keypair"
+      AvailabilityZone: eu-west-1a
+      # ImageId: ami-097ec49079a5d612f # Alpine linux
+      # ImageId: ami-0cd31bdeccfc98a37 # Amazon linux
+      ImageId: ami-063d4ab14480ac177 # Amazon Linux 2 AMI (HVM), SSD Volume Type
+      InstanceType: "t3a.nano"
+      Tenancy: default
+      SecurityGroupIds:
+        - Ref: SiteSecurityGroup
+      SubnetId:
+        Ref: SiteSubnet
+      UserData:
+        "Fn::Base64":
+          !Sub |
+            #!/bin/bash -xe
+            # Get the latest CloudFormation package
+            yum update -y aws-cfn-bootstrap
+            # Start cfn-init
+            /opt/aws/bin/cfn-init -s ${AWS::StackId} -r SiteEC2Instance --region ${AWS::Region} || error_exit 'Failed to run cfn-init'
+            # Start up the cfn-hup daemon to listen for changes to the EC2 instance metadata
+            /opt/aws/bin/cfn-hup || error_exit 'Failed to start cfn-hup'
+            # All done so signal success
+            /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackId} --resource SiteEC2Instance --region ${AWS::Region}
+      Tags:
+        - Key: stack
+          Value: site
