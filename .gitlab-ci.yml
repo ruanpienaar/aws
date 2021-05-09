@@ -2,7 +2,7 @@
 stages:
   - pages
 
-publish_pages:
+pages:
   image: ruanpienaar/python_mkdocs:latest
   stage: pages
   script:
