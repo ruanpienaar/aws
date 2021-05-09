@@ -7,6 +7,12 @@ pages:
   stage: pages
   script:
     - mkdocs build
+    - mkdir .public
+    - cp -r site/* .public
+    - mv .public public
+ artifacts:
+    paths:
+    - public
   artifacts:
     paths:
-    - site
+    - public
