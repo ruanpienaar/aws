@@ -13,6 +13,3 @@ pages:
  artifacts:
     paths:
     - public
-  artifacts:
-    paths:
-    - public
